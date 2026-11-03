@@ -62,6 +62,7 @@ Docker version 29.9.2, build a82e528
 - [x] 바인드 마운트 변경 반영
 - [x] Docker 볼륨 영속성
 - [x] Git 설정 + GitHub push + VSCode 연동
+- [x] (보너스) Docker Compose 단일 서비스 실행 (up / ps / logs / down)
 
 ## 4. 저장소 구조
 
@@ -69,6 +70,7 @@ Docker version 29.9.2, build a82e528
 .
 ├── README.md                 # 기술 문서 (이 파일)
 ├── Dockerfile                # 커스텀 이미지 정의
+├── docker-compose.yml        # (보너스) Compose 실행 설정
 ├── app/
 │   └── index.html            # 웹 서버 정적 소스
 └── docs/
@@ -591,6 +593,12 @@ VSCode(WSL: Ubuntu 원격 연결)에서 GitHub 계정으로 로그인했고, VSC
 - **확인**: `git remote -v` 결과가 비어 있음 → 원격 저장소 미생성
 - **대안**: GitHub 웹에서 빈 public 저장소를 만든 뒤 `git remote add origin ...` + `git push -u origin main`으로 직접 연결 → 성공
 
+### 5) README 복사 후 `README.md:Zone.Identifier` 파일 생성
+- **문제**: Windows에서 내려받은 README.md를 WSL 폴더(`\\wsl.localhost\Ubuntu\home\pc\workstation`)로 복사하자 `git status`에 `README.md:Zone.Identifier`라는 낯선 파일이 함께 나타남
+- **원인**: Windows는 인터넷에서 받은 파일에 출처 정보(Zone.Identifier, 보조 데이터 스트림)를 붙이는데, WSL 파일 시스템으로 복사하면 이 정보가 별도 파일로 생성됨
+- **확인**: 파일 내용은 README와 무관한 Windows 메타데이터
+- **해결**: `rm 'README.md:Zone.Identifier'`로 삭제 후 커밋 (이름에 `:`가 있어 따옴표로 감쌈)
+
 ## 16. 재현 방법 (평가자용)
 
 ```bash
@@ -603,6 +611,7 @@ curl http://localhost:8080
 
 **주의사항**
 - 저장소의 `app/index.html`은 바인드 마운트 실습 후 상태(`version: 2 (bind mount)`)로 커밋되어 있다. 새로 빌드하면 이 내용이 응답된다.
+- Compose로 실행하려면 저장소 루트에서 `docker compose up -d --build` → `curl http://localhost:8090` → `docker compose down` (18장 참고).
 - 8080 포트가 사용 중이면 `-p 8090:80`처럼 다른 호스트 포트를 사용한다.
 - 바인드 마운트 명령의 `$(pwd)/app`은 저장소 루트에서 실행한다는 전제다.
 - Windows에서는 WSL2 + Docker Desktop(WSL integration 활성화)이 필요하며, 작업 폴더는 `/mnt/c/...`가 아닌 WSL 홈(`~`) 아래에 두어야 `chmod`가 정상 반영된다.
@@ -611,3 +620,97 @@ curl http://localhost:8080
 - 로그·스크린샷에 토큰, 비밀번호, 인증 코드가 포함되지 않았음을 확인했다.
 - Git 커밋 이메일은 GitHub noreply 주소를 사용했다.
 - GitHub 인증은 VSCode 로그인으로 처리했으며 토큰을 직접 다루거나 기록하지 않았다.
+
+## 18. 보너스: Docker Compose 단일 서비스
+
+`docker build` + `docker run`으로 길게 입력하던 실행 설정을 `docker-compose.yml` 파일로 문서화하고, `up / ps / logs / down` 흐름을 실행했다.
+
+### docker-compose.yml
+
+```yaml
+# 보너스 1: docker run 명령을 "문서화된 실행 설정"으로 옮긴 파일
+# 아래 설정은 다음 명령과 같다:
+#   docker build -t my-web:compose .
+#   docker run -d -p 8090:80 --name compose-web my-web:compose
+services:
+  web:
+    build: .                 # 같은 폴더의 Dockerfile로 이미지 빌드
+    image: my-web:compose    # 만들어질 이미지 이름:태그
+    container_name: compose-web
+    ports:
+      - "8090:80"            # 호스트 8090 → 컨테이너 80
+```
+
+| 항목 | `docker run` 방식 | Compose 방식 |
+|---|---|---|
+| 빌드 | `docker build -t my-web:compose .` | `build: .` + `image: my-web:compose` |
+| 컨테이너 이름 | `--name compose-web` | `container_name: compose-web` |
+| 포트 매핑 | `-p 8090:80` | `ports: - "8090:80"` |
+| 실행 | 명령 2개를 직접 입력 | `docker compose up -d --build` 한 줄 |
+
+### 실행 (up)
+
+```
+$ docker compose up -d --build
+[+] Building 15.1s (9/9) FINISHED
+ => CACHED [1/2] FROM docker.io/library/nginx:alpine@sha256:785835ea65db...
+ => [2/2] COPY app/ /usr/share/nginx/html/                                0.2s
+ => => naming to docker.io/library/my-web:compose                          0.0s
+[+] up 3/3
+ ✔ Image my-web:compose        Built                                     16.3s
+ ✔ Network workstation_default Created                                    0.5s
+ ✔ Container compose-web       Started                                    3.2s
+```
+
+- 베이스 이미지가 이미 내려받아져 있어 `CACHED`로 재사용되었고, 최초 빌드(약 110초)보다 빠르게 끝났다.
+- Compose는 프로젝트(폴더) 이름을 딴 전용 네트워크 `workstation_default`를 자동으로 만든다.
+
+### 상태 확인 (ps)
+
+```
+$ docker compose ps
+NAME          IMAGE            COMMAND                  SERVICE   CREATED              STATUS                        PORTS
+compose-web   my-web:compose   "/docker-entrypoint.…"   web       About a minute ago   Up About a minute (healthy)   0.0.0.0:8090->80/tcp, [::]:8090->80/tcp
+```
+
+- `SERVICE web`: yml의 서비스 이름. `(healthy)`: Dockerfile의 HEALTHCHECK 통과. `8090->80`: yml의 포트 설정이 적용됨.
+
+### 접속 확인
+
+```
+$ curl localhost:8090
+<!doctype html>
+<html lang="ko">
+...
+  <h1>Hello from my custom NGINX container!</h1>
+  <p>민경의 개발 워크스테이션 과제 - Dockerfile로 만든 커스텀 이미지입니다.</p>
+  <p id="version">version: 2 (bind mount)</p>
+</body>
+```
+
+- 이번 실행은 바인드 마운트를 쓰지 않았다. `version: 2 (bind mount)`는 12장 실습에서 `app/index.html` 파일에 직접 써 넣은 문구이며, 빌드 시 `COPY`로 이미지 안에 복사된 내용이 응답된 것이다.
+
+### 로그 확인 (logs)
+
+```
+$ docker compose logs   (앞부분 생략)
+compose-web  | ::1 - - [03/Nov/2026:00:42:57 +0000] "GET / HTTP/1.1" 200 327 "-" "Wget" "-"
+compose-web  | ::1 - - [03/Nov/2026:00:43:28 +0000] "GET / HTTP/1.1" 200 327 "-" "Wget" "-"
+compose-web  | ::1 - - [03/Nov/2026:00:43:59 +0000] "GET / HTTP/1.1" 200 327 "-" "Wget" "-"
+compose-web  | 172.18.0.1 - - [03/Nov/2026:00:44:14 +0000] "GET / HTTP/1.1" 200 327 "-" "curl/8.18.0" "-"
+compose-web  | ::1 - - [03/Nov/2026:00:44:29 +0000] "GET / HTTP/1.1" 200 327 "-" "Wget" "-"
+```
+
+- `::1 ... "Wget"`: 컨테이너 내부에서 약 30초 간격으로 발생 → Dockerfile HEALTHCHECK(`--interval=30s`, `wget`)가 동작한 기록.
+- `172.18.0.1 ... "curl/8.18.0"`: 호스트에서 실행한 `curl localhost:8090` 요청. Compose 전용 네트워크의 게이트웨이 주소를 거쳐 들어온 것으로 판단된다.
+
+### 정리 (down)
+
+```
+$ docker compose down
+[+] down 2/2
+ ✔ Container compose-web       Removed       2.0s
+ ✔ Network workstation_default Removed       0.4s
+```
+
+- `down`은 Compose가 만든 컨테이너와 네트워크를 한 번에 정지·삭제한다. 이미지(`my-web:compose`)는 남는다.

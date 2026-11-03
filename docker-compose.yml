@@ -1,0 +1,12 @@
+# 보너스 1: docker run 명령을 "문서화된 실행 설정"으로 옮긴 파일
+# 아래 설정은 다음 명령과 같다:
+#   docker build -t my-web:compose .
+#   docker run -d -p 8090:80 --name compose-web my-web:compose
+services:
+  web:
+    build: .                 # 같은 폴더의 Dockerfile로 이미지 빌드
+    image: my-web:compose    # 만들어질 이미지 이름:태그
+    container_name: compose-web
+    ports:
+      - "8090:80"            # 호스트 8090 → 컨테이너 80
+      
