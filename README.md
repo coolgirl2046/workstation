@@ -5,7 +5,7 @@ Windows 10 PC에 **WSL2(Ubuntu) + Docker Desktop + Git/GitHub** 기반 개발 �
 **실행 결과(로그·접속·데이터 유지)로 검증**한 기록입니다.
 
 > 서울캠퍼스 안내는 macOS + OrbStack 기준이지만, 이 과제는 **개인 Windows PC**에서 수행했습니다.
-> OrbStack은 macOS/Linux용이므로 **WSL2 + Docker Desktop(WSL2 백엔드)**으로 대체했으며, `docker` 명령 사용법은 동일합니다.
+> OrbStack은 macOS용 앱이므로 **WSL2 + Docker Desktop(WSL2 백엔드)**으로 대체했으며, `docker` 명령 사용법은 동일합니다.
 
 ---
 
@@ -81,12 +81,16 @@ Docker version 29.9.2, build a82e528
 
 | 항목 | 확인 명령 | 기대 결과 | 증거 위치 |
 |---|---|---|---|
-| Docker 동작 | `docker info` | Server 정보 출력 | [8장](#8-docker-설치-및-점검) |
+| 터미널 조작 | `pwd`, `ls -la`, `mkdir`, `cp`, `mv`, `rm`, `cat`, `touch` | 파일·폴더 생성/이동/삭제 결과 | [6장](#6-터미널-조작-로그) |
+| 권한 | `chmod`, `stat -c '%a %A %n'` | 644↔600, 755↔700 변경·복구 | [7장](#7-권한-실습) |
+| Docker 동작 | `docker --version`, `docker info` | 버전 및 Server 정보 출력 | [8장](#8-docker-설치-및-점검) |
+| Docker 운영 | `docker run hello-world`, `images`, `ps -a`, `logs`, `stats`, `stop` | 실행·목록·로그·리소스 확인 | [9장](#9-docker-기본-운영-명령) |
 | 커스텀 이미지 | `docker build`, `docker inspect` | LABEL/ENV 반영 | [10장](#10-dockerfile-커스텀-이미지) |
 | 포트 매핑 | `curl localhost:8080/8081`, 브라우저 | 내 페이지 응답 | [11장](#11-포트-매핑-접속-증거), `docs/screenshots/port-*.png` |
 | 바인드 마운트 | 호스트 파일 수정 후 `curl` | 8082만 변경 반영 | [12장](#12-바인드-마운트-변경-반영) |
 | 볼륨 영속성 | 컨테이너 삭제 후 새 컨테이너에서 `cat` | 데이터 유지 | [13장](#13-docker-볼륨-영속성) |
-| Git/GitHub | `git config --list`, `git push` | 설정·업로드 완료 | [14장](#14-git-설정-및-github-연동) |
+| Git/GitHub | `git config --list`, `git push` | 설정·업로드 완료 | [14장](#14-git-설정-및-github-연동), `docs/screenshots/vscode-github.png` |
+| (보너스) Compose | `docker compose up/ps/logs/down`, `curl localhost:8090` | 단일 서비스 실행·정리 | [18장](#18-보너스-docker-compose-단일-서비스) |
 
 ---
 
@@ -168,7 +172,7 @@ pc@DESKTOP-4DK2MKN:~$ pwd
 ## 7. 권한 실습
 
 ```bash
-# 변경 전 (ls -la 결과 발췌)
+# 변경 전: 6장 `ls -la` 출력 중 해당 줄 발췌
 drwxr-xr-x 2 pc pc 4096 Nov  2 12:14 docs        # 755
 -rw-r--r-- 1 pc pc   18 Nov  2 12:16 hello.txt   # 644
 
@@ -551,7 +555,7 @@ branch 'main' set up to track 'origin/main'.
 
 **VSCode GitHub 로그인 및 저장소 연동**
 
-VSCode(WSL: Ubuntu 원격 연결)에서 GitHub 계정으로 로그인했고, VSCode 통합 터미널의 `git push`는 VSCode의 GitHub 인증을 사용해 별도 비밀번호 입력 없이 완료되었다.
+VSCode(WSL: Ubuntu 원격 연결)의 계정 메뉴에서 `coolgirl2046 (GitHub)` 로그인 상태를 확인했다. VSCode 통합 터미널에서 실행한 `git push`는 별도 비밀번호 입력 없이 완료되었으며, VSCode의 GitHub 인증이 사용된 것으로 판단된다.
 
 ![VSCode GitHub 연동](docs/screenshots/vscode-github.png)
 ![GitHub 저장소](docs/screenshots/github-repo.png)
@@ -596,7 +600,7 @@ VSCode(WSL: Ubuntu 원격 연결)에서 GitHub 계정으로 로그인했고, VSC
 ### 5) README 복사 후 `README.md:Zone.Identifier` 파일 생성
 - **문제**: Windows에서 내려받은 README.md를 WSL 폴더(`\\wsl.localhost\Ubuntu\home\pc\workstation`)로 복사하자 `git status`에 `README.md:Zone.Identifier`라는 낯선 파일이 함께 나타남
 - **원인**: Windows는 인터넷에서 받은 파일에 출처 정보(Zone.Identifier, 보조 데이터 스트림)를 붙이는데, WSL 파일 시스템으로 복사하면 이 정보가 별도 파일로 생성됨
-- **확인**: 파일 내용은 README와 무관한 Windows 메타데이터
+- **확인**: `git status`의 Untracked files에 `README.md`와 별개 파일로 표시됨. 직접 만든 적 없는 파일이고, 이름이 Windows 출처 정보 이름(Zone.Identifier)과 같음
 - **해결**: `rm 'README.md:Zone.Identifier'`로 삭제 후 커밋 (이름에 `:`가 있어 따옴표로 감쌈)
 
 ## 16. 재현 방법 (평가자용)
