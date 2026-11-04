@@ -59,6 +59,7 @@ Docker version 29.9.2, build a82e528
 - [x] ubuntu 컨테이너 진입 및 attach/exec 차이 관찰
 - [x] Dockerfile 커스텀 이미지 빌드/실행
 - [x] 포트 매핑 접속 (8080, 8081)
+- [x] 포트 점유 프로세스 확인 및 포트 해제 (`netstat`, `tasklist`, 충돌 재현)
 - [x] 바인드 마운트 변경 반영
 - [x] Docker 볼륨 영속성
 - [x] Git 설정 + GitHub push + VSCode 연동
@@ -87,6 +88,7 @@ Docker version 29.9.2, build a82e528
 | Docker 운영 | `docker run hello-world`, `images`, `ps -a`, `logs`, `stats`, `stop` | 실행·목록·로그·리소스 확인 | [9장](#9-docker-기본-운영-명령) |
 | 커스텀 이미지 | `docker build`, `docker inspect` | LABEL/ENV 반영 | [10장](#10-dockerfile-커스텀-이미지) |
 | 포트 매핑 | `curl localhost:8080/8081`, 브라우저 | 내 페이지 응답 | [11장](#11-포트-매핑-접속-증거), `docs/screenshots/port-*.png` |
+| 포트 점유·해제 | `netstat -ano \| findstr :8080`, `tasklist`, `docker stop` | 점유 프로세스 확인, 충돌 오류 재현, 해제 후 재실행 | [11장](#11-포트-매핑-접속-증거), `docs/screenshots/port-check.png` |
 | 바인드 마운트 | 호스트 파일 수정 후 `curl` | 8082만 변경 반영 | [12장](#12-바인드-마운트-변경-반영) |
 | 볼륨 영속성 | 컨테이너 삭제 후 새 컨테이너에서 `cat` | 데이터 유지 | [13장](#13-docker-볼륨-영속성) |
 | Git/GitHub | `git config --list`, `git push` | 설정·업로드 완료 | [14장](#14-git-설정-및-github-연동), `docs/screenshots/vscode-github.png` |
@@ -429,6 +431,70 @@ pc@DESKTOP-4DK2MKN:~/workstation$ curl http://localhost:8081
 `-p 8080:80`은 "호스트 8080번으로 들어온 요청을 컨테이너 80번으로 전달"하는 연결이다.
 두 컨테이너가 내부에서 모두 80번을 써도 호스트 포트를 다르게(8080, 8081) 주면 동시에 실행할 수 있다.
 
+### 포트 점유 확인 및 해제 (Windows PowerShell)
+
+같은 호스트 포트를 두 컨테이너가 동시에 쓸 수 없음을 확인하고, **누가 포트를 쓰고 있는지 찾는 법 → 충돌 재현 → 포트 해제** 순서로 검증했다.
+컨테이너가 모두 꺼져 있던 상태에서 `my-web-8080`만 다시 켠 뒤, Windows PowerShell(`PS C:\Users\pc>`)로 수행했다.
+
+**1) 8080 포트를 점유한 프로세스 확인**
+
+```powershell
+PS C:\Users\pc> docker start my-web-8080
+my-web-8080
+PS C:\Users\pc> docker ps
+CONTAINER ID   IMAGE        COMMAND                   CREATED        STATUS                             PORTS                                     NAMES
+a60bb64eeec1   my-web:1.0   "/docker-entrypoint.…"   47 hours ago   Up 32 seconds (health: starting)   0.0.0.0:8080->80/tcp, [::]:8080->80/tcp   my-web-8080
+
+PS C:\Users\pc> netstat -ano | findstr :8080
+  TCP    0.0.0.0:8080           0.0.0.0:0              LISTENING       13776
+  TCP    127.0.0.1:8080         0.0.0.0:0              LISTENING       14868
+  TCP    [::]:8080              [::]:0                 LISTENING       13776
+  TCP    [::1]:8080             [::]:0                 LISTENING       14868
+
+PS C:\Users\pc> tasklist | findstr 13776
+com.docker.backend.exe       13776 Console                    1     60,788 K
+PS C:\Users\pc> tasklist | findstr 14868
+wslrelay.exe                 14868 Console                    1      1,392 K
+```
+
+- `netstat -ano`: 열려 있는 포트와 그 포트를 잡은 프로세스 번호(PID, 마지막 칸)를 출력. `findstr :8080`으로 8080 줄만 걸러냄
+- `LISTENING`: 해당 포트에서 접속을 기다리는 중
+- `tasklist | findstr <PID>`: PID의 프로그램 이름 확인 → 8080은 **Docker Desktop 본체(`com.docker.backend.exe`)** 와 **WSL 중계 프로그램(`wslrelay.exe`)** 이 점유
+- (참고) Linux/WSL 안에서는 같은 목적으로 `ss -ltnp` 또는 `lsof -i :8080`을 쓴다. 이번 실습은 Docker Desktop이 Windows 쪽에서 포트를 열기 때문에 Windows의 `netstat`으로 확인했다.
+
+**2) 같은 포트로 실행해 충돌 재현**
+
+```powershell
+PS C:\Users\pc> docker run -d -p 8080:80 --name conflict-test my-web:1.0
+cb01a3e41a92656345fa5e534e687bd5c25d4d1a0cf332382ebbacea719e90f5
+docker: Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint conflict-test (ce1f6d6bbc9abba0452f6332cc75ee3274a58785625fab0ef75f6625a2d9af03): Bind for 0.0.0.0:8080 failed: port is already allocated
+```
+
+- `Bind for 0.0.0.0:8080 failed: port is already allocated` = 8080은 이미 `my-web-8080`이 사용 중이라 연결 실패
+
+**3) 포트 해제 → 비었는지 확인 → 다시 실행**
+
+```powershell
+PS C:\Users\pc> docker stop my-web-8080
+my-web-8080
+PS C:\Users\pc> netstat -ano | findstr :8080
+  TCP    127.0.0.1:14999        127.0.0.1:8080         TIME_WAIT       0
+
+PS C:\Users\pc> docker rm -f conflict-test
+conflict-test
+PS C:\Users\pc> docker run -d -p 8080:80 --name conflict-test my-web:1.0
+5def33046182aa027e66666c0841ae7f6c3c3d4dec396e41fc2825b17b7391ca
+PS C:\Users\pc> docker ps
+CONTAINER ID   IMAGE        COMMAND                   CREATED          STATUS                             PORTS                                     NAMES
+5def33046182   my-web:1.0   "/docker-entrypoint.…"   22 seconds ago   Up 21 seconds (health: starting)   0.0.0.0:8080->80/tcp, [::]:8080->80/tcp   conflict-test
+```
+
+- `docker stop` 후 `LISTENING` 줄이 모두 사라짐 → 8080 해제 완료. 남은 `TIME_WAIT`(PID 0)은 방금 끊긴 연결의 흔적으로, 점유 프로세스가 아니며 잠시 후 사라진다.
+- 충돌로 실패했던 `conflict-test`는 지우고(`rm -f`) 새로 실행 → 오류 없이 `0.0.0.0:8080->80/tcp`로 연결됨
+- **다른 해결 방법**: 기존 컨테이너를 끄지 않으려면 호스트 포트만 바꿔 실행한다. 예) `-p 8083:80`
+
+![포트 점유 확인과 해제 PowerShell 화면](docs/screenshots/port-check.png)
+
 ## 12. 바인드 마운트 변경 반영
 
 ```bash
@@ -603,6 +669,19 @@ VSCode(WSL: Ubuntu 원격 연결)의 계정 메뉴에서 `coolgirl2046 (GitHub)`
 - **확인**: `git status`의 Untracked files에 `README.md`와 별개 파일로 표시됨. 직접 만든 적 없는 파일이고, 이름이 Windows 출처 정보 이름(Zone.Identifier)과 같음
 - **해결**: `rm 'README.md:Zone.Identifier'`로 삭제 후 커밋 (이름에 `:`가 있어 따옴표로 감쌈)
 
+### 6) 포트 충돌로 실패한 컨테이너를 다시 켰더니 포트 연결이 빠짐
+- **문제**: `port is already allocated`로 실패한 `conflict-test`를, 8080을 비운 뒤 `docker start conflict-test`로 켰더니 실행은 됐지만 `PORTS`가 `80/tcp`만 표시됨(호스트 8080 연결 없음)
+- **원인 가설**: 처음 생성할 때 포트 연결 단계에서 실패해, 컨테이너가 호스트 포트 연결 없이 만들어진 상태로 남은 것으로 추정(내부 원인은 확인하지 못함)
+- **확인**:
+  ```powershell
+  PS C:\Users\pc> docker start conflict-test
+  conflict-test
+  PS C:\Users\pc> docker ps
+  CONTAINER ID   IMAGE        COMMAND                   CREATED         STATUS                    PORTS     NAMES
+  cb01a3e41a92   my-web:1.0   "/docker-entrypoint.…"   4 minutes ago   Up 58 seconds (healthy)   80/tcp    conflict-test
+  ```
+- **해결**: `docker rm -f conflict-test`로 지우고 `docker run -d -p 8080:80 ...`으로 새로 생성 → `0.0.0.0:8080->80/tcp` 정상 표시. 교훈: 포트 충돌로 실패한 컨테이너는 다시 켜지 말고 지운 뒤 새로 만든다.
+
 ## 16. 재현 방법 (평가자용)
 
 ```bash
@@ -616,7 +695,7 @@ curl http://localhost:8080
 **주의사항**
 - 저장소의 `app/index.html`은 바인드 마운트 실습 후 상태(`version: 2 (bind mount)`)로 커밋되어 있다. 새로 빌드하면 이 내용이 응답된다.
 - Compose로 실행하려면 저장소 루트에서 `docker compose up -d --build` → `curl http://localhost:8090` → `docker compose down` (18장 참고).
-- 8080 포트가 사용 중이면 `-p 8090:80`처럼 다른 호스트 포트를 사용한다.
+- 8080 포트가 사용 중이면 PowerShell에서 `netstat -ano | findstr :8080` → `tasklist | findstr <PID>`로 점유 프로그램을 확인하고, 해당 컨테이너를 `docker stop`하거나 `-p 8090:80`처럼 다른 호스트 포트를 사용한다 (11장 참고).
 - 바인드 마운트 명령의 `$(pwd)/app`은 저장소 루트에서 실행한다는 전제다.
 - Windows에서는 WSL2 + Docker Desktop(WSL integration 활성화)이 필요하며, 작업 폴더는 `/mnt/c/...`가 아닌 WSL 홈(`~`) 아래에 두어야 `chmod`가 정상 반영된다.
 
