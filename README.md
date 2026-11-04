@@ -4,8 +4,8 @@ Windows 10 PC에 **WSL2(Ubuntu) + Docker Desktop + Git/GitHub** 기반 개발 �
 터미널 조작 → 권한 → Docker 운영 → Dockerfile 커스텀 이미지 → 포트 매핑 → 바인드 마운트 → 볼륨 → Git/GitHub 연동까지
 **실행 결과(로그·접속·데이터 유지)로 검증**한 기록입니다.
 
-> 서울캠퍼스 안내는 macOS + OrbStack 기준이지만, 이 과제는 **개인 Windows PC**에서 수행했습니다.
-> OrbStack은 macOS용 앱이므로 **WSL2 + Docker Desktop(WSL2 백엔드)**으로 대체했으며, `docker` 명령 사용법은 동일합니다.
+> 이 과제는 **경남캠퍼스**에서 **개인 Windows PC**로 수행했습니다.
+> 미션의 OrbStack 안내는 서울캠퍼스(sudo 제한) 추가 내용이므로 해당하지 않아, 공통 요구사항에 따라 **WSL2 + Docker Desktop(WSL2 백엔드)**을 직접 설치했습니다. `docker` 명령 사용법은 동일합니다.
 
 ---
 
